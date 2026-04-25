@@ -97,14 +97,36 @@ Use project-rag as the source of truth for code context.
 4) expand scope only if confidence is low
 ```
 
-## Optional OpenAI Summaries
+## Optional AI Summaries (Bring Your Own LLM)
 
-By default, summaries are local/extractive.  
-Enable OpenAI summarization only if you explicitly want it:
+By default, summaries are `extractive` (deterministic, no LLM call).
+
+If you want AI-generated summaries, set `SUMMARY_BACKEND=openai_compatible` and point to any OpenAI-compatible endpoint.
+
+### Option A: OpenAI
 
 ```bash
-export OPENAI_API_KEY="sk-..."
-export USE_OPENAI_SUMMARIZATION=true
+export SUMMARY_BACKEND=openai_compatible
+export SUMMARY_API_KEY="sk-..."
+export SUMMARY_MODEL="gpt-4.1-mini"
+```
+
+### Option B: Local LLM via Ollama (OpenAI-compatible `/v1`)
+
+```bash
+export SUMMARY_BACKEND=openai_compatible
+export SUMMARY_BASE_URL="http://localhost:11434/v1"
+export SUMMARY_API_KEY="ollama"
+export SUMMARY_MODEL="qwen2.5:7b"
+```
+
+### Option C: LM Studio / vLLM / Other OpenAI-Compatible Server
+
+```bash
+export SUMMARY_BACKEND=openai_compatible
+export SUMMARY_BASE_URL="http://localhost:8000/v1"
+export SUMMARY_API_KEY="local"
+export SUMMARY_MODEL="<your-model-name>"
 ```
 
 ## Configuration
@@ -114,8 +136,12 @@ See `config.py`:
 - `USE_LOCAL_EMBEDDINGS` (default `true`)
 - `EMBEDDING_MODEL` (default local model)
 - `EMBEDDING_DIM`
-- `USE_OPENAI_SUMMARIZATION` (default `false`)
-- `OPENAI_MODEL`
+- `SUMMARY_BACKEND` (`extractive` or `openai_compatible`)
+- `SUMMARY_MODEL`
+- `SUMMARY_API_KEY`
+- `SUMMARY_BASE_URL`
+- `USE_OPENAI_SUMMARIZATION` (legacy compatibility flag)
+- `OPENAI_MODEL` (legacy default for summary model)
 - `AUTO_SYNC_ON_QUERY` (default `true`)
 - `AUTO_SYNC_MIN_INTERVAL_SECONDS` (default `30`)
 - `MAX_FILE_SIZE_BYTES`

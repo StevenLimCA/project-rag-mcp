@@ -6,9 +6,14 @@ from pathlib import Path
 from typing import Iterator, List, Optional, Set, Tuple
 
 from config import (
-    PROJECTS, INDEXABLE_EXTENSIONS, OPENAI_API_KEY, OPENAI_MODEL, USE_OPENAI_SUMMARIZATION,
+    INDEXABLE_EXTENSIONS,
     CHUNK_SIZE, CHUNK_OVERLAP, SUMMARY_MAX_TOKENS,
-    MAX_CHUNKS_PER_DOCUMENT, MAX_FILE_SIZE_BYTES
+    MAX_CHUNKS_PER_DOCUMENT, MAX_FILE_SIZE_BYTES,
+    PROJECTS,
+    SUMMARY_API_KEY,
+    SUMMARY_BACKEND,
+    SUMMARY_BASE_URL,
+    SUMMARY_MODEL,
 )
 from core.database import Database
 from core.embeddings import EmbeddingProvider
@@ -26,18 +31,21 @@ class Indexer:
 
     def __init__(self, db: Database):
         self.db = db
-        self.openai_client = self._init_openai()
+        self.summary_client = self._init_summary_client()
         self.embedding_provider = EmbeddingProvider()
 
-    def _init_openai(self):
-        """Initialize OpenAI client."""
-        if not USE_OPENAI_SUMMARIZATION or not OPENAI_API_KEY:
+    def _init_summary_client(self):
+        """Initialize summary client for OpenAI-compatible backends."""
+        if SUMMARY_BACKEND != "openai_compatible":
             return None
         try:
             from openai import OpenAI
-            return OpenAI(api_key=OPENAI_API_KEY)
+            kwargs = {"api_key": SUMMARY_API_KEY or "local"}
+            if SUMMARY_BASE_URL:
+                kwargs["base_url"] = SUMMARY_BASE_URL
+            return OpenAI(**kwargs)
         except Exception as e:
-            print(f"Warning: Could not initialize OpenAI: {e}")
+            print(f"Warning: Could not initialize summary client: {e}")
             return None
 
     def index_project(self, project_name: str, project_path: Optional[str] = None) -> Tuple[int, int]:
@@ -157,16 +165,16 @@ class Indexer:
             return ""
 
     def _generate_summary(self, content: str) -> str:
-        """Generate summary using OpenAI."""
-        if not self.openai_client:
+        """Generate summary from configured backend."""
+        if SUMMARY_BACKEND != "openai_compatible" or not self.summary_client:
             return self._simple_summary(content)
 
         try:
             # Limit content to first 3000 chars for cost
             content_chunk = content[:3000]
             
-            response = self.openai_client.chat.completions.create(
-                model=OPENAI_MODEL,
+            response = self.summary_client.chat.completions.create(
+                model=SUMMARY_MODEL,
                 messages=[
                     {"role": "system", "content": "You are a concise summarizer. Summarize the content in 2-3 sentences focusing on key points."},
                     {"role": "user", "content": f"Summarize this:\n\n{content_chunk}"}
@@ -176,7 +184,7 @@ class Indexer:
             )
             return response.choices[0].message.content.strip()
         except Exception as e:
-            print(f"Error generating summary with OpenAI: {e}")
+            print(f"Error generating summary with configured backend: {e}")
             return self._simple_summary(content)
 
     def _simple_summary(self, content: str) -> str:
