@@ -1,0 +1,5 @@
+# DogeMonsters Summary
+
+## DogeMonster/DogCareCore.swift
+import CoreGraphics import Foundation enum DogCareAction: CaseIterable, Hashable {
+
