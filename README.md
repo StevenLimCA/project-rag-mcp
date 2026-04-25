@@ -2,6 +2,23 @@
 
 Local-first RAG indexing and semantic search for software projects, exposed as an MCP server.
 
+## What This Tool Is
+
+Project RAG MCP is a context router for coding agents. Instead of sending broad repo context to the model on every task, it indexes your project once and retrieves only the most relevant chunks per query.
+
+## Why It Matters
+
+For real codebases, most token waste comes from irrelevant context. This tool reduces that by narrowing each request to high-signal files/snippets.
+
+Practical impact:
+
+- Lower token usage per request (often large reductions vs full-context prompts)
+- Faster responses due to smaller prompts
+- Lower model/API cost when using hosted models
+- Better focus by grounding answers in project-scoped retrieval
+
+The core value is not summary text; it is retrieval precision. You pay the indexing cost once, then reuse targeted context many times.
+
 ## Features
 
 - Local embeddings by default (`sentence-transformers`)
