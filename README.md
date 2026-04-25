@@ -85,6 +85,23 @@ Available MCP tools:
 - `get_project_context`
 - `get_document`
 
+## Sync Behavior
+
+Project sync is incremental and runs in these modes:
+
+1. MCP read-triggered auto-sync (default on)
+   - Triggered before: `search`, `get_project_context`, `get_document`
+   - Controlled by:
+     - `AUTO_SYNC_ON_QUERY` (default: `true`)
+     - `AUTO_SYNC_MIN_INTERVAL_SECONDS` (default: `30`)
+   - Throttled per project (won't run more often than the interval).
+
+2. Manual/continuous CLI sync
+   - One-time sync: `cli.py index <project_name>`
+   - Looping sync: `cli.py watch <project_name> [interval_seconds]` (default: `5`)
+
+If the server is connected but no read call is made (and `watch` is not running), no background sync is performed.
+
 ## Retrieval-First Prompting Pattern
 
 Use this pattern to keep context tight:
