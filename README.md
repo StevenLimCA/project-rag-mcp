@@ -85,6 +85,97 @@ Available MCP tools:
 - `get_project_context`
 - `get_document`
 
+## Skill: `rag-retrieval-first`
+
+This repo includes a Codex skill at:
+
+- `skills/rag-retrieval-first/SKILL.md`
+
+The skill enforces retrieval-first behavior and can bootstrap project registration/indexing when missing.
+
+### Install on Codex Desktop
+
+From repo root:
+
+```bash
+mkdir -p ~/.codex/skills
+cp -R ./skills/rag-retrieval-first ~/.codex/skills/
+```
+
+Restart Codex Desktop (or start a new Codex session), then invoke:
+
+```text
+Use the rag-retrieval-first skill for this task.
+```
+
+Update/reinstall after edits:
+
+```bash
+rm -rf ~/.codex/skills/rag-retrieval-first
+cp -R ./skills/rag-retrieval-first ~/.codex/skills/
+```
+
+### Use with Claude Desktop
+
+Claude Desktop does not load Codex `SKILL.md` files directly.
+
+Use the same policy by placing it in:
+
+1. Claude project instructions/system prompt, or
+2. your repo `AGENTS.md`.
+
+Recommended Claude instruction:
+
+```text
+Use project-rag as source of truth.
+If the project is not registered, add_project and index_project first.
+Then run search (top_k 3-5), fetch only 2-4 files via get_document,
+and answer/implement from retrieved files. Expand scope only if confidence is low.
+```
+
+### Install/Use with Hermes Agents
+
+If Hermes supports MCP stdio servers, register `project-rag` as a tool server using this command/args pair:
+
+- command: `"/absolute/path/to/project-rag-mcp/.venv/bin/python"`
+- args: `["/absolute/path/to/project-rag-mcp/mcp/server.py"]`
+
+Example generic Hermes tool config (adapt field names to your Hermes version):
+
+```json
+{
+  "tools": [
+    {
+      "name": "project-rag",
+      "type": "mcp-stdio",
+      "command": "/absolute/path/to/project-rag-mcp/.venv/bin/python",
+      "args": ["/absolute/path/to/project-rag-mcp/mcp/server.py"],
+      "env": {
+        "AUTO_SYNC_ON_QUERY": "true",
+        "AUTO_SYNC_MIN_INTERVAL_SECONDS": "30"
+      }
+    }
+  ]
+}
+```
+
+Then in Hermes prompts, use retrieval-first instructions:
+
+```text
+Use project-rag as source of truth.
+If project is missing, add_project and index_project first.
+Then search (top_k 3-5), fetch only 2-4 files with get_document, and answer from those files.
+```
+
+If your Hermes runtime does not support MCP directly, create a small adapter service that calls:
+
+```python
+from mcp.tools import ToolDefinitions
+result = ToolDefinitions.handle_tool(tool_name, arguments)
+```
+
+and expose those adapter endpoints as Hermes-native tools.
+
 ## Sync Behavior
 
 Project sync is incremental and runs in these modes:
