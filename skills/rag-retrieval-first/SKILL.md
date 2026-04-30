@@ -15,6 +15,7 @@ Use this skill when `project-rag` is available and the goal is to minimize token
 4. Fetch only 2 to 4 files via `get_document`.
 5. Expand scope only if confidence is low or evidence conflicts.
 6. Do not rely on broad thread context when retrieval data exists.
+7. Fail closed: if retrieval fails, reindex + retry once; do not fall back to full local context.
 
 ## Bootstrap Workflow (Project Registration)
 
@@ -37,6 +38,8 @@ Use this skill when `project-rag` is available and the goal is to minimize token
 3. Run `get_document` for selected files only.
 4. Answer or implement from retrieved evidence.
 5. If still uncertain, run one additional targeted `search`.
+6. If search is empty/weak, run `index_project` once and retry `search` once.
+7. If still empty/weak, stop and ask user to verify project path or reindex.
 
 ## Query Guidance
 
@@ -53,6 +56,7 @@ Use project-rag as source of truth.
 2) fetch 2-4 relevant files with get_document
 3) answer/implement from those files
 4) if confidence is low, run one additional targeted search
+5) if retrieval fails: index_project once, retry once, then stop and ask user (no broad fallback)
 ```
 
 ## Prompt Template (Q&A)
@@ -62,4 +66,5 @@ Use project-rag only for context.
 If <project_name> is missing, register/index it first.
 Search <project_name> for "<question topic>" and answer from retrieved files.
 If evidence is weak, perform one additional targeted search before concluding.
+If retrieval remains weak/empty, reindex once and retry once; then stop and ask user for path/index correction.
 ```
