@@ -3,7 +3,7 @@ import os
 import time
 from typing import Any, Dict
 
-from config import AUTO_SYNC_MIN_INTERVAL_SECONDS, AUTO_SYNC_ON_QUERY
+from config import AUTO_SYNC_MIN_INTERVAL_SECONDS, AUTO_SYNC_ON_QUERY, env_bool, env_int
 from core.database import Database
 from core.indexer import Indexer
 from core.retriever import Retriever
@@ -191,7 +191,7 @@ class ToolDefinitions:
             project_name = args.get("project_name")
             top_k = args.get("top_k", 5)
 
-            ToolDefinitions._maybe_auto_sync(db, project_name)
+            sync_status = ToolDefinitions._maybe_auto_sync(db, project_name)
             
             retriever = Retriever(db)
             results = retriever.search(query, project_name, top_k)
@@ -199,6 +199,7 @@ class ToolDefinitions:
             return {
                 "status": "success",
                 "query": query,
+                "sync": sync_status,
                 "result_count": len(results),
                 "results": [
                     {
@@ -231,7 +232,7 @@ class ToolDefinitions:
         """Handle get_project_context tool."""
         try:
             project_name = args.get("project_name")
-            ToolDefinitions._maybe_auto_sync(db, project_name)
+            sync_status = ToolDefinitions._maybe_auto_sync(db, project_name)
             retriever = Retriever(db)
             context = retriever.get_full_context(project_name)
             
@@ -241,6 +242,7 @@ class ToolDefinitions:
             return {
                 "status": "success",
                 "project_name": project_name,
+                "sync": sync_status,
                 "context": context
             }
         except Exception as e:
@@ -253,7 +255,7 @@ class ToolDefinitions:
             project_name = args.get("project_name")
             file_path = args.get("file_path")
 
-            ToolDefinitions._maybe_auto_sync(db, project_name)
+            sync_status = ToolDefinitions._maybe_auto_sync(db, project_name)
             
             retriever = Retriever(db)
             content = retriever.get_document_content(file_path, project_name)
@@ -267,6 +269,7 @@ class ToolDefinitions:
             return {
                 "status": "success",
                 "file_path": file_path,
+                "sync": sync_status,
                 "content": content
             }
         except Exception as e:
@@ -275,18 +278,43 @@ class ToolDefinitions:
     @staticmethod
     def _maybe_auto_sync(db: Database, project_name: str):
         """Incrementally sync project before read operations (throttled)."""
-        if not AUTO_SYNC_ON_QUERY or not project_name:
-            return
+        if not ToolDefinitions._auto_sync_enabled() or not project_name:
+            return {"enabled": False, "ran": False, "reason": "disabled_or_no_project"}
 
         project = db.get_project_by_name(project_name)
         if not project:
-            return
+            return {"enabled": True, "ran": False, "reason": "project_not_registered"}
 
         now = time.time()
         last_sync = ToolDefinitions._last_auto_sync.get(project_name, 0)
-        if now - last_sync < AUTO_SYNC_MIN_INTERVAL_SECONDS:
-            return
+        min_interval = ToolDefinitions._auto_sync_min_interval()
+        elapsed = now - last_sync
+        if elapsed < min_interval:
+            return {
+                "enabled": True,
+                "ran": False,
+                "reason": "throttled",
+                "seconds_until_next_sync": round(min_interval - elapsed, 3),
+            }
 
         indexer = Indexer(db)
-        indexer.index_project(project_name)
+        docs, summaries = indexer.index_project(project_name)
         ToolDefinitions._last_auto_sync[project_name] = now
+        return {
+            "enabled": True,
+            "ran": True,
+            "reason": "synced",
+            "documents_indexed": docs,
+            "summaries_generated": summaries,
+        }
+
+    @staticmethod
+    def _auto_sync_enabled() -> bool:
+        """Read auto-sync toggle dynamically so env changes do not require restart."""
+        default = "true" if AUTO_SYNC_ON_QUERY else "false"
+        return env_bool("AUTO_SYNC_ON_QUERY", default)
+
+    @staticmethod
+    def _auto_sync_min_interval() -> int:
+        """Read throttle interval dynamically so env changes do not require restart."""
+        return max(0, env_int("AUTO_SYNC_MIN_INTERVAL_SECONDS", AUTO_SYNC_MIN_INTERVAL_SECONDS))

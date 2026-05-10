@@ -8,6 +8,19 @@ def _env_bool(name: str, default: str = "false") -> bool:
     return os.getenv(name, default).lower() in {"1", "true", "yes"}
 
 
+def env_bool(name: str, default: str = "false") -> bool:
+    """Public runtime boolean env parser."""
+    return _env_bool(name, default)
+
+
+def env_int(name: str, default: int) -> int:
+    """Parse an integer environment variable at runtime."""
+    try:
+        return int(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+
+
 # API Configuration
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
@@ -59,4 +72,4 @@ SEARCH_TOP_K = 5
 
 # Auto-sync settings
 AUTO_SYNC_ON_QUERY = _env_bool("AUTO_SYNC_ON_QUERY", "true")
-AUTO_SYNC_MIN_INTERVAL_SECONDS = int(os.getenv("AUTO_SYNC_MIN_INTERVAL_SECONDS", "30"))
+AUTO_SYNC_MIN_INTERVAL_SECONDS = env_int("AUTO_SYNC_MIN_INTERVAL_SECONDS", 5)

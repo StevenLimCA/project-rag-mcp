@@ -152,7 +152,7 @@ Example generic Hermes tool config (adapt field names to your Hermes version):
       "args": ["/absolute/path/to/project-rag-mcp/mcp/server.py"],
       "env": {
         "AUTO_SYNC_ON_QUERY": "true",
-        "AUTO_SYNC_MIN_INTERVAL_SECONDS": "30"
+        "AUTO_SYNC_MIN_INTERVAL_SECONDS": "5"
       }
     }
   ]
@@ -182,10 +182,11 @@ Project sync is incremental and runs in these modes:
 
 1. MCP read-triggered auto-sync (default on)
    - Triggered before: `search`, `get_project_context`, `get_document`
-   - Controlled by:
-     - `AUTO_SYNC_ON_QUERY` (default: `true`)
-     - `AUTO_SYNC_MIN_INTERVAL_SECONDS` (default: `30`)
+     - Controlled by:
+       - `AUTO_SYNC_ON_QUERY` (default: `true`)
+       - `AUTO_SYNC_MIN_INTERVAL_SECONDS` (default: `5`)
    - Throttled per project (won't run more often than the interval).
+   - Read responses include a `sync` object so agents can see whether sync ran or was throttled.
 
 2. Manual/continuous CLI sync
    - One-time sync: `cli.py index <project_name>`
@@ -251,7 +252,7 @@ See `config.py`:
 - `USE_OPENAI_SUMMARIZATION` (legacy compatibility flag)
 - `OPENAI_MODEL` (legacy default for summary model)
 - `AUTO_SYNC_ON_QUERY` (default `true`)
-- `AUTO_SYNC_MIN_INTERVAL_SECONDS` (default `30`)
+- `AUTO_SYNC_MIN_INTERVAL_SECONDS` (default `5`)
 - `MAX_FILE_SIZE_BYTES`
 - `MAX_CHUNKS_PER_DOCUMENT`
 - `CHUNK_SIZE`, `CHUNK_OVERLAP`
@@ -262,6 +263,12 @@ See `config.py`:
 2. `index` reports non-zero documents.
 3. `search` returns file paths + relevance.
 4. Re-running `index` after no file changes should report near-zero updates.
+
+Run tests:
+
+```bash
+.venv/bin/python -m unittest discover -s tests -v
+```
 
 ## Troubleshooting
 
