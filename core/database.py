@@ -1,11 +1,18 @@
 """SQLite database with vector search support."""
+import math
 import sqlite3
 import struct
 from typing import Any, Dict, List, Optional, Set
 
 import sqlite_vec
 
-from config import DB_PATH, EMBEDDING_DIM, SEARCH_TOP_K
+from config import (
+    DB_PATH,
+    EMBEDDING_DIM,
+    SEARCH_GLOBAL_OVERFETCH_MIN,
+    SEARCH_GLOBAL_OVERFETCH_MULTIPLIER,
+    SEARCH_TOP_K,
+)
 
 
 class Database:
@@ -339,7 +346,93 @@ class Database:
                 "text": text,
                 "distance": dist
             })
+        if project_id is not None and not results:
+            overfetch_results = self._search_embeddings_with_global_overfetch(embedding, top_k, project_id)
+            if overfetch_results:
+                return overfetch_results
+            return self._search_project_embeddings_in_python(embedding, top_k, project_id)
         return results
+
+    def _search_embeddings_with_global_overfetch(
+        self,
+        embedding: List[float],
+        top_k: int,
+        project_id: int,
+    ) -> List[Dict[str, Any]]:
+        """Overfetch globally and filter to the project before using the slower fallback."""
+        cursor = self.conn.cursor()
+        overfetch_k = max(
+            top_k,
+            SEARCH_GLOBAL_OVERFETCH_MIN,
+            top_k * SEARCH_GLOBAL_OVERFETCH_MULTIPLIER,
+        )
+        cursor.execute(
+            """SELECT e.document_id, e.chunk_index, e.chunk_text, e.distance
+               FROM embeddings e
+               WHERE e.embedding MATCH ? AND e.k = ?
+               ORDER BY e.distance""",
+            (self._to_float32_blob(embedding), overfetch_k),
+        )
+
+        results = []
+        for doc_id, chunk_idx, text, dist in cursor.fetchall():
+            if self._document_belongs_to_project(doc_id, project_id):
+                results.append({
+                    "document_id": doc_id,
+                    "chunk_index": chunk_idx,
+                    "text": text,
+                    "distance": dist,
+                })
+                if len(results) >= top_k:
+                    break
+        return results
+
+    def _document_belongs_to_project(self, document_id: int, project_id: int) -> bool:
+        """Return whether a document belongs to a project."""
+        cursor = self.conn.cursor()
+        cursor.execute(
+            "SELECT 1 FROM documents WHERE id = ? AND project_id = ? LIMIT 1",
+            (document_id, project_id),
+        )
+        return cursor.fetchone() is not None
+
+    def _search_project_embeddings_in_python(
+        self,
+        embedding: List[float],
+        top_k: int,
+        project_id: int,
+    ) -> List[Dict[str, Any]]:
+        """Fallback project-scoped search when sqlite-vec post-filters to zero rows."""
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """SELECT e.document_id, e.chunk_index, e.chunk_text, e.embedding
+               FROM embeddings e
+               JOIN documents d ON d.id = e.document_id
+               WHERE d.project_id = ?""",
+            (project_id,),
+        )
+
+        query_norm = math.sqrt(sum(value * value for value in embedding))
+        if query_norm == 0:
+            query_norm = 1.0
+
+        scored = []
+        for doc_id, chunk_idx, text, blob in cursor.fetchall():
+            vector = self._from_float32_blob(blob)
+            if not vector:
+                continue
+            vector_norm = math.sqrt(sum(value * value for value in vector)) or 1.0
+            similarity = sum(a * b for a, b in zip(embedding, vector)) / (query_norm * vector_norm)
+            distance = max(0.0, 1.0 - similarity)
+            scored.append({
+                "document_id": doc_id,
+                "chunk_index": chunk_idx,
+                "text": text,
+                "distance": distance,
+            })
+
+        scored.sort(key=lambda item: item["distance"])
+        return scored[:top_k]
 
     def get_project_summary(self, project_id: int) -> Dict[str, Any]:
         """Get summary stats for a project."""
@@ -400,3 +493,10 @@ class Database:
     def _to_float32_blob(embedding: List[float]) -> bytes:
         """Convert embedding list to sqlite-vec compatible float32 blob."""
         return struct.pack(f"{len(embedding)}f", *embedding)
+
+    @staticmethod
+    def _from_float32_blob(blob: bytes) -> List[float]:
+        """Convert sqlite-vec float32 blob back to a Python list."""
+        if not blob:
+            return []
+        return list(struct.unpack(f"{len(blob) // 4}f", blob))

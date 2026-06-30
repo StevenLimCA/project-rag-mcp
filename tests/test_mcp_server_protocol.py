@@ -30,6 +30,7 @@ class MCPServerProtocolTests(unittest.TestCase):
         self.assertEqual(response["id"], 1)
         tool_names = {tool["name"] for tool in response["result"]["tools"]}
         self.assertIn("search", tool_names)
+        self.assertIn("get_context_pack", tool_names)
         self.assertIn("get_document", tool_names)
 
     def test_initialize_uses_mcp_jsonrpc_shape(self):

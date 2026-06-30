@@ -95,6 +95,7 @@ def main():
         print("  python cli.py index <project_name> [project_path]")
         print("  python cli.py watch <project_name> [interval_seconds]")
         print("  python cli.py search <query> [project_name] [top_k]")
+        print("  python cli.py pack <query> <project_name> [max_tokens] [top_k]")
         print("  python cli.py list")
         print("  python cli.py context <project_name>")
         print("  python cli.py get <project_name> <file_path>")
@@ -212,6 +213,34 @@ def main():
                 print(f"{i}. File: {r['file_path']}")
                 print(f"   Relevance: {r['relevance']:.2f}")
                 print(f"   Summary: {r['summary'][:100]}...")
+                print()
+
+        elif command == "pack":
+            if len(sys.argv) < 4:
+                print("Usage: python cli.py pack <query> <project_name> [max_tokens] [top_k]")
+                return
+            query = sys.argv[2]
+            project_name = sys.argv[3]
+            max_tokens = int(sys.argv[4]) if len(sys.argv) > 4 else 2500
+            top_k = int(sys.argv[5]) if len(sys.argv) > 5 else 8
+
+            retriever = Retriever(db)
+            pack = retriever.get_context_pack(query, project_name, max_tokens=max_tokens, top_k=top_k)
+
+            print(f"\nContext pack: '{query}'")
+            print(
+                f"Project: {project_name}, estimated tokens: "
+                f"{pack['estimated_tokens']}/{pack['max_tokens']}, "
+                f"included: {pack['included_count']}, omitted: {pack['omitted_count']}\n"
+            )
+            for i, snippet in enumerate(pack["snippets"], 1):
+                line_range = ""
+                if snippet.get("line_start") is not None:
+                    line_range = f":{snippet['line_start']}-{snippet['line_end']}"
+                print(f"{i}. {snippet['file_path']}{line_range} (relevance {snippet['relevance']})")
+                if snippet.get("summary"):
+                    print(f"   Summary: {snippet['summary']}")
+                print(snippet["snippet"])
                 print()
 
         elif command == "list":

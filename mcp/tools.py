@@ -3,7 +3,13 @@ import os
 import time
 from typing import Any, Dict
 
-from config import AUTO_SYNC_MIN_INTERVAL_SECONDS, AUTO_SYNC_ON_QUERY, env_bool, env_int
+from config import (
+    AUTO_SYNC_MAX_DOCUMENTS_ON_QUERY,
+    AUTO_SYNC_MIN_INTERVAL_SECONDS,
+    AUTO_SYNC_ON_QUERY,
+    env_bool,
+    env_int,
+)
 from core.database import Database
 from core.indexer import Indexer
 from core.retriever import Retriever
@@ -99,6 +105,44 @@ class ToolDefinitions:
                 }
             },
             {
+                "name": "get_context_pack",
+                "description": "Search a project and return a compact, token-budgeted context pack of relevant snippets",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "project_name": {
+                            "type": "string",
+                            "description": "Name of the project"
+                        },
+                        "query": {
+                            "type": "string",
+                            "description": "Focused retrieval query"
+                        },
+                        "max_tokens": {
+                            "type": "integer",
+                            "description": "Approximate maximum tokens to return (default: 2500)",
+                            "default": 2500
+                        },
+                        "top_k": {
+                            "type": "integer",
+                            "description": "Number of candidate chunks to retrieve before packing (default: 8)",
+                            "default": 8
+                        },
+                        "snippet_tokens": {
+                            "type": "integer",
+                            "description": "Approximate token cap per snippet (default: 300)",
+                            "default": 300
+                        },
+                        "include_summaries": {
+                            "type": "boolean",
+                            "description": "Include compact file summaries when available (default: true)",
+                            "default": True
+                        }
+                    },
+                    "required": ["project_name", "query"]
+                }
+            },
+            {
                 "name": "get_document",
                 "description": "Retrieve the original content of a specific document",
                 "inputSchema": {
@@ -133,6 +177,8 @@ class ToolDefinitions:
                 return ToolDefinitions._handle_list_projects(db)
             elif tool_name == "get_project_context":
                 return ToolDefinitions._handle_get_project_context(db, arguments)
+            elif tool_name == "get_context_pack":
+                return ToolDefinitions._handle_get_context_pack(db, arguments)
             elif tool_name == "get_document":
                 return ToolDefinitions._handle_get_document(db, arguments)
             else:
@@ -249,6 +295,36 @@ class ToolDefinitions:
             return {"status": "error", "message": str(e)}
 
     @staticmethod
+    def _handle_get_context_pack(db: Database, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle get_context_pack tool."""
+        try:
+            project_name = args.get("project_name")
+            query = args.get("query")
+            if not project_name:
+                return {"status": "error", "message": "project_name is required"}
+            if not query:
+                return {"status": "error", "message": "query is required"}
+
+            sync_status = ToolDefinitions._maybe_auto_sync(db, project_name)
+            retriever = Retriever(db)
+            pack = retriever.get_context_pack(
+                query=query,
+                project_name=project_name,
+                max_tokens=args.get("max_tokens", 2500),
+                top_k=args.get("top_k", 8),
+                snippet_tokens=args.get("snippet_tokens", 300),
+                include_summaries=args.get("include_summaries", True),
+            )
+
+            return {
+                "status": "success",
+                "sync": sync_status,
+                **pack,
+            }
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    @staticmethod
     def _handle_get_document(db: Database, args: Dict[str, Any]) -> Dict[str, Any]:
         """Handle get_document tool."""
         try:
@@ -285,6 +361,18 @@ class ToolDefinitions:
         if not project:
             return {"enabled": True, "ran": False, "reason": "project_not_registered"}
 
+        max_docs = ToolDefinitions._auto_sync_max_documents()
+        project_summary = db.get_project_summary(project["id"])
+        document_count = project_summary.get("documents", 0)
+        if max_docs >= 0 and document_count > max_docs:
+            return {
+                "enabled": True,
+                "ran": False,
+                "reason": "skipped_large_project",
+                "documents": document_count,
+                "max_documents_on_query": max_docs,
+            }
+
         now = time.time()
         last_sync = ToolDefinitions._last_auto_sync.get(project_name, 0)
         min_interval = ToolDefinitions._auto_sync_min_interval()
@@ -318,3 +406,8 @@ class ToolDefinitions:
     def _auto_sync_min_interval() -> int:
         """Read throttle interval dynamically so env changes do not require restart."""
         return max(0, env_int("AUTO_SYNC_MIN_INTERVAL_SECONDS", AUTO_SYNC_MIN_INTERVAL_SECONDS))
+
+    @staticmethod
+    def _auto_sync_max_documents() -> int:
+        """Read auto-sync project-size guard dynamically."""
+        return env_int("AUTO_SYNC_MAX_DOCUMENTS_ON_QUERY", AUTO_SYNC_MAX_DOCUMENTS_ON_QUERY)

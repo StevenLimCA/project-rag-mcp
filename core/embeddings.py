@@ -1,8 +1,9 @@
 """Embedding provider abstraction (local-first, OpenAI optional)."""
 from functools import lru_cache
+import os
 from typing import List, Optional
 
-from config import EMBEDDING_MODEL, OPENAI_API_KEY, USE_LOCAL_EMBEDDINGS
+from config import EMBEDDING_CACHE_DIR, EMBEDDING_MODEL, OPENAI_API_KEY, USE_LOCAL_EMBEDDINGS
 
 
 class EmbeddingProvider:
@@ -59,9 +60,15 @@ class EmbeddingProvider:
 def _load_local_model():
     """Load and cache sentence-transformers model once per process."""
     try:
+        EMBEDDING_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        hf_cache_dir = EMBEDDING_CACHE_DIR / "huggingface"
+        os.environ.setdefault("HF_HOME", str(hf_cache_dir))
+        os.environ.setdefault("HF_HUB_CACHE", str(hf_cache_dir / "hub"))
+        os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
+
         from sentence_transformers import SentenceTransformer
 
-        return SentenceTransformer(EMBEDDING_MODEL)
+        return SentenceTransformer(EMBEDDING_MODEL, cache_folder=str(EMBEDDING_CACHE_DIR))
     except Exception as e:
         print(f"Warning: Could not initialize local embedding model '{EMBEDDING_MODEL}': {e}")
         return None

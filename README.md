@@ -50,6 +50,7 @@ Register and index a project:
 .venv/bin/python cli.py add MyRepo /absolute/path/to/my/repo
 .venv/bin/python cli.py index MyRepo
 .venv/bin/python cli.py search "auth middleware" MyRepo 5
+.venv/bin/python cli.py pack "auth middleware" MyRepo 2500
 ```
 
 ## CLI Commands
@@ -61,6 +62,7 @@ Register and index a project:
 .venv/bin/python cli.py index <project_name> [project_path]
 .venv/bin/python cli.py watch <project_name> [interval_seconds]
 .venv/bin/python cli.py search <query> [project_name] [top_k]
+.venv/bin/python cli.py pack <query> <project_name> [max_tokens] [top_k]
 .venv/bin/python cli.py list
 .venv/bin/python cli.py context <project_name>
 .venv/bin/python cli.py get <project_name> <file_path>
@@ -83,6 +85,7 @@ Available MCP tools:
 - `search`
 - `list_projects`
 - `get_project_context`
+- `get_context_pack`
 - `get_document`
 
 ## Skill: `rag-retrieval-first`
@@ -152,7 +155,8 @@ Example generic Hermes tool config (adapt field names to your Hermes version):
       "args": ["/absolute/path/to/project-rag-mcp/mcp/server.py"],
       "env": {
         "AUTO_SYNC_ON_QUERY": "true",
-        "AUTO_SYNC_MIN_INTERVAL_SECONDS": "5"
+        "AUTO_SYNC_MIN_INTERVAL_SECONDS": "300",
+        "AUTO_SYNC_MAX_DOCUMENTS_ON_QUERY": "250"
       }
     }
   ]
@@ -181,12 +185,14 @@ and expose those adapter endpoints as Hermes-native tools.
 Project sync is incremental and runs in these modes:
 
 1. MCP read-triggered auto-sync (default on)
-   - Triggered before: `search`, `get_project_context`, `get_document`
+   - Triggered before: `search`, `get_context_pack`, `get_project_context`, `get_document`
      - Controlled by:
        - `AUTO_SYNC_ON_QUERY` (default: `true`)
-       - `AUTO_SYNC_MIN_INTERVAL_SECONDS` (default: `5`)
+       - `AUTO_SYNC_MIN_INTERVAL_SECONDS` (default: `300`)
+       - `AUTO_SYNC_MAX_DOCUMENTS_ON_QUERY` (default: `250`; set `-1` to allow all projects)
    - Throttled per project (won't run more often than the interval).
-   - Read responses include a `sync` object so agents can see whether sync ran or was throttled.
+   - Large projects skip read-triggered sync by default to avoid retrieval timeouts.
+   - Read responses include a `sync` object so agents can see whether sync ran, was throttled, or was skipped.
 
 2. Manual/continuous CLI sync
    - One-time sync: `cli.py index <project_name>`
@@ -200,11 +206,16 @@ Use this pattern to keep context tight:
 
 ```text
 Use project-rag as the source of truth for code context.
-1) search "<topic>" in <project_name> (top_k 3-5)
-2) fetch only the most relevant files with get_document
-3) answer/implement from retrieved files
+1) get_context_pack "<topic>" in <project_name> (max_tokens 1500-3000)
+2) answer/implement from returned snippets
+3) fetch a full file with get_document only when the pack is insufficient
 4) expand scope only if confidence is low
 ```
+
+`get_context_pack` is the lowest-token retrieval path. It searches relevant chunks,
+trims snippets to a requested budget, includes file paths and best-effort line
+ranges, and reports how many candidate chunks were omitted because of the token
+cap.
 
 ## Optional AI Summaries (Bring Your Own LLM)
 
@@ -252,7 +263,10 @@ See `config.py`:
 - `USE_OPENAI_SUMMARIZATION` (legacy compatibility flag)
 - `OPENAI_MODEL` (legacy default for summary model)
 - `AUTO_SYNC_ON_QUERY` (default `true`)
-- `AUTO_SYNC_MIN_INTERVAL_SECONDS` (default `5`)
+- `AUTO_SYNC_MIN_INTERVAL_SECONDS` (default `300`)
+- `AUTO_SYNC_MAX_DOCUMENTS_ON_QUERY` (default `250`; set `-1` to allow read-triggered sync for all projects)
+- `SEARCH_GLOBAL_OVERFETCH_MIN` (default `1000`)
+- `SEARCH_GLOBAL_OVERFETCH_MULTIPLIER` (default `200`)
 - `MAX_FILE_SIZE_BYTES`
 - `MAX_CHUNKS_PER_DOCUMENT`
 - `CHUNK_SIZE`, `CHUNK_OVERLAP`
